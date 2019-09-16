@@ -4,12 +4,12 @@ project(poseDetection LANGUAGES CXX VERSION 1.0.0)
 
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O0")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 set(CMAKE_CXX_STANDARD 17)
 #set(CMAKE_C_COMPILER icc)
@@ -44,6 +44,7 @@ find_library(GFLAGS gflags PATHS "/usr/lib/x86_64-linux-gnu" NO_DEFAULT_PATH)
 #find_library(OPENMP iomp5 PATHS "/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin" NO_DEFAULT_PATH)
 
 target_link_libraries(${EXE_NAME}
+                      /usr/lib/gcc/x86_64-linux-gnu/7/libstdc++fs.a
 #                      ${OPENMP}
                       ${CAFFE}
                       ${DARKNET}
