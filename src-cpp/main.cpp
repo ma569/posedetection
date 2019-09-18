@@ -16,12 +16,12 @@ const std::string CFG_FILE         = "/home/musabbir/workspace/poseDetection/dar
 const std::string WEIGHT_FILE      = "/home/musabbir/workspace/poseDetection/darknet/yolov3.weights";
 const std::string IMAGE_FILE       = "/home/musabbir/workspace/poseDetection/images/crawl0.jpg";
 const std::string CLASS_NAMES_FILE = "/home/musabbir/workspace/poseDetection/darknet/data/coco.names";
-const std::string VIDEO_PATH       = "/home/musabbir/workspace/poseDetection/deep_sort/resources/videos/img1/";
-const std::string DETECTIONS_FILE  = "/home/musabbir/workspace/poseDetection/deep_sort/resources/videos/det/det.txt";
+const std::string VIDEO_PATH       = "/home/musabbir/workspace/poseDetection/deep_sort/resources/videos/temp/img1/";
+const std::string DETECTIONS_FILE  = "/home/musabbir/workspace/poseDetection/deep_sort/resources/videos/temp/det/det.txt";
 const op::PoseModel POSE_MODEL     = op::PoseModel::BODY_25;
 const char delimiter               = '.';
 const std::string FILE_EXTENSSION  = ".jpeg";
-const float THRESHOLD              = 0.5;
+const float THRESHOLD              = 0.6;
 const float HIER_THRESHOLD         = 0.5;
 const int BBOX_PARAMETERS          = 4;
 
@@ -103,8 +103,8 @@ std::array<double, BBOX_PARAMETERS> getPersonBbox(image & im, box & objBbox) {
 	return std::array<double, BBOX_PARAMETERS> {{dx, dy, width, height}};
 }
 
-std::vector<std::array<double, BBOX_PARAMETERS>> getPersonBboxes(image im, detection *dets,
-											       int numBoxes)
+std::vector<std::array<double, BBOX_PARAMETERS>>
+getPersonBboxes(std::vector<double>& detectProbs, image& im, detection *dets, int numBoxes)
 {
 	std::vector<std::array<double, BBOX_PARAMETERS>> boundingBoxes;
 
@@ -114,7 +114,8 @@ std::vector<std::array<double, BBOX_PARAMETERS>> getPersonBboxes(image im, detec
 			box objBoundingBox = dets[i].bbox;
 
         	std::array<double, BBOX_PARAMETERS> boundingBox = getPersonBbox(im, objBoundingBox);
-        	boundingBoxes.push_back(boundingBox);
+        	boundingBoxes.emplace_back(boundingBox);
+        	detectProbs.emplace_back(dets[i].prob[0]);
 		}
     }
 
@@ -129,6 +130,7 @@ std::vector<cv::Mat> getImageLabels(image im, detection *dets, int numBoxes)
 
     for(int i = 0; i < numBoxes; ++i) {
 		if (dets[i].prob[0] > THRESHOLD) { //! prob[0] is 'person'
+
 			//! guaranteed to be a person
 			box objBoundingBox = dets[i].bbox;
 			std::array<double, BBOX_PARAMETERS> boundingBox = getPersonBbox(im, objBoundingBox);
@@ -178,7 +180,8 @@ void display(const std::vector<std::shared_ptr<op::Datum>>& datumsPtr,
 }
 
 //! returns image paths sorted by name
-std::vector<std::string> getImagesInDir(const std::string& imageDir)
+std::vector<std::string> getImagesInDir(const std::string& imageDir,
+										int frequency = 1)
 {
 	std::vector<std::string> fileNames;
 	namespace fs = std::experimental::filesystem;
@@ -186,7 +189,9 @@ std::vector<std::string> getImagesInDir(const std::string& imageDir)
 		//! image sequence number
 		//! TODO: get file extension (may be)
 		const std::string filename = entry.path().filename();
-		fileNames.emplace_back(filename);
+		if(std::stoi(filename) % frequency == 0 || std::stoi(filename) == 1) {
+			fileNames.emplace_back(filename);
+		}
 
 	}
 
@@ -200,6 +205,7 @@ std::vector<std::string> getImagesInDir(const std::string& imageDir)
 
 void writeBboxesToFile(const std::string& outFilePath,
 					   const std::vector<std::array<double, BBOX_PARAMETERS>>& personBboxes,
+					   std::vector<double>& detectProbs,
 					   const std::string& frameNumberPath)
 {
 	const int frameNumber = std::stoi(frameNumberPath);
@@ -207,10 +213,11 @@ void writeBboxesToFile(const std::string& outFilePath,
 	std::ofstream outFile;
 	outFile.open(outFilePath, std::ios_base::app);
 	//! write bboxes
-	int bboxId = 1;
+	int bboxId = 0;
 	for (const auto & box : personBboxes) {
 		outFile << frameNumber << ", -1, " << box[0] << ", " << box[1] << ", "
-				<< box[2] << ", " << box[3] << ", -1, -1, -1, -1"
+				<< box[2] << ", " << box[3] << ", " << detectProbs[bboxId]
+			    << ", -1, -1, -1"
 				<< '\n';
 		++bboxId;
 	}
@@ -228,7 +235,7 @@ int main() {
 
 	//! returns a file list in a directory sorted by numbers
 	//! assumes filenames contains numbers
-	const std::vector<std::string> imagePaths = getImagesInDir(VIDEO_PATH);
+	const std::vector<std::string> imagePaths = getImagesInDir(VIDEO_PATH, 10);
 	for(const auto & entry : imagePaths) {
 		int numBoxes = 0;
 		image im = loadImage(VIDEO_PATH + entry);
@@ -241,17 +248,22 @@ int main() {
 		//! yolo boiler plate code
 		const int numClasses = net->layers[net->n-1].classes;
 		do_nms_sort(dets, numBoxes, numClasses, THRESHOLD);
+		std::vector<double> detectProbs;
 		std::vector<std::array<double, BBOX_PARAMETERS>> personBboxes =
-											getPersonBboxes(im, dets, numBoxes);
+								getPersonBboxes(detectProbs, im, dets, numBoxes);
 		//! list of files
-		writeBboxesToFile(DETECTIONS_FILE, personBboxes, entry);
+		writeBboxesToFile(DETECTIONS_FILE, personBboxes, detectProbs, entry);
+//		std::vector<cv::Mat>croppedCvImages = getImageLabels(im, dets, numBoxes);
+//		for(const auto& im: croppedCvImages) {
+//			cv::imshow("Display window", im);
+//			cv::waitKey(0);
+//		}
 	}
 
 
 
 
 
-//	std::vector<cv::Mat>croppedCvImages = getImageLabels(im, dets, numBoxes);
 	/*
 	// openpose section
 	{
